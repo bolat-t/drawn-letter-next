@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Download, Send } from "lucide-react";
-import Link from "next/link";
+import { Download, Send, Share2 } from "lucide-react";
 import { supabase } from "@/utils/supabase";
 
 export default function PostcardEditor() {
@@ -119,48 +118,54 @@ export default function PostcardEditor() {
     };
 
     return (
-        <div className="flex flex-col items-center gap-6 w-full max-w-4xl mx-auto p-4">
+        <div className="flex flex-col items-center gap-4 sm:gap-6 w-full max-w-3xl mx-auto animate-fade-in">
             {/* Canvas Preview */}
-            <div className="relative shadow-2xl rounded-sm overflow-hidden bg-white">
+            <div className="relative shadow-2xl rounded-lg overflow-hidden bg-white border border-gray-200">
                 <canvas
                     ref={canvasRef}
                     width={1000}
                     height={600}
-                    className="w-full h-auto max-w-[800px]"
+                    className="w-full h-auto max-w-[700px]"
                 />
             </div>
 
             {/* Controls */}
-            <div className="flex flex-wrap gap-4 items-end bg-white/80 p-6 rounded-xl backdrop-blur-sm w-full font-courier text-[#3c3c3c]">
-                <div className="flex flex-col gap-2">
-                    <label>Stamp Text</label>
+            <div className="flex flex-col sm:flex-row flex-wrap gap-4 items-stretch sm:items-end bg-white/90 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-lg w-full font-courier text-[#3c3c3c]">
+                <div className="flex flex-col gap-1.5 flex-1 min-w-[140px]">
+                    <label className="text-xs font-bold uppercase tracking-wider text-[#5a5a5a]">Stamp Text</label>
                     <input
                         type="text"
                         maxLength={20}
                         value={text}
                         onChange={(e) => setText(e.target.value)}
-                        className="border-b-2 border-[#3c3c3c] bg-transparent outline-none px-2 py-1"
+                        className="border-b-2 border-[#3c3c3c] bg-transparent outline-none px-2 py-2 min-h-[44px] focus:border-[#d32f2f] transition-colors"
                         placeholder="Enter location..."
                     />
                 </div>
-                <div className="flex flex-col gap-2">
-                    <label>Date</label>
+                <div className="flex flex-col gap-1.5 min-w-[140px]">
+                    <label className="text-xs font-bold uppercase tracking-wider text-[#5a5a5a]">Date</label>
                     <input
                         type="date"
                         value={date}
                         onChange={(e) => setDate(e.target.value)}
-                        className="border-b-2 border-[#3c3c3c] bg-transparent outline-none px-2 py-1"
+                        className="border-b-2 border-[#3c3c3c] bg-transparent outline-none px-2 py-2 min-h-[44px] focus:border-[#d32f2f] transition-colors"
                     />
                 </div>
 
-                <div className="ml-auto flex gap-4">
-                    <button onClick={handleDownload} className="flex items-center gap-2 px-4 py-2 border-2 border-[#3c3c3c] rounded-full hover:bg-[#3c3c3c] hover:text-[#f5f0e6] transition-colors">
+                <div className="flex gap-3 sm:ml-auto pt-2 sm:pt-0">
+                    <button
+                        onClick={handleDownload}
+                        className="flex items-center justify-center gap-2 px-4 py-2.5 min-h-[44px] border-2 border-[#3c3c3c] rounded-full hover:bg-[#3c3c3c] hover:text-[#f5f0e6] active:scale-95 transition-all"
+                    >
                         <Download className="w-4 h-4" />
-                        <span>Save Image</span>
+                        <span className="hidden sm:inline">Save</span>
                     </button>
-                    <button onClick={handleUpload} className="flex items-center gap-2 px-6 py-2 bg-[#d32f2f] text-white rounded-full hover:bg-[#b71c1c] transition-colors shadow-md">
+                    <button
+                        onClick={handleUpload}
+                        className="flex items-center justify-center gap-2 px-5 py-2.5 min-h-[44px] bg-[#d32f2f] text-white rounded-full hover:bg-[#b71c1c] active:scale-95 transition-all shadow-lg font-bold"
+                    >
                         <Send className="w-4 h-4" />
-                        <span>Send to Cloud</span>
+                        <span>Send</span>
                     </button>
                 </div>
             </div>
