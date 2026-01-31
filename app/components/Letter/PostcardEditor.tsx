@@ -92,6 +92,11 @@ export default function PostcardEditor() {
 
     const handleUpload = async () => {
         if (!canvasRef.current) return;
+        if (!supabase) {
+            alert("Cloud upload is not configured. Please set Supabase environment variables.");
+            return;
+        }
+        const client = supabase; // Capture for closure
         // Convert to Blob
         canvasRef.current.toBlob(async (blob) => {
             if (!blob) return;
@@ -101,7 +106,7 @@ export default function PostcardEditor() {
             const filename = `postcard-${Date.now()}.png`;
 
             // 2. Upload
-            const { data, error } = await supabase.storage
+            const { data, error } = await client.storage
                 .from('postcards') // Ensure bucket exists! I need to create it or assume it exists? I didn't create it.
                 .upload(filename, blob);
 

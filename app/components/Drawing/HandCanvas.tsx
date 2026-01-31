@@ -133,7 +133,7 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
                     canvasCtx.globalCompositeOperation = "destination-out";
                     canvasCtx.moveTo(prevPos.current.x, prevPos.current.y);
                     canvasCtx.lineTo(x, y);
-                    canvasCtx.lineWidth = brushSize * 4; // Eraser bigger
+                    canvasCtx.lineWidth = brushSize * 2.5; // Match original eraser multiplier
                     canvasCtx.stroke();
                     canvasCtx.restore();
                 } else {
@@ -176,7 +176,7 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
     }, [brushColor, brushSize, libLoaded]);
 
     return (
-        <div className="relative w-full h-full rounded-2xl overflow-hidden border-4 border-[#3c3c3c] shadow-xl bg-white">
+        <div className="relative w-full h-full rounded-2xl overflow-hidden shadow-[0_4px_10px_rgba(0,0,0,0.2)] bg-white">
             {/* Messages */}
             {!isCameraReady && (
                 <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#f5f0e6] text-[#3c3c3c]">
@@ -200,10 +200,12 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
                 className="absolute top-0 left-0 w-full h-full -scale-x-100 touch-none"
             />
 
-            {/* AI Debug / Status Overlay */}
-            <div className="absolute top-4 left-4 bg-white/80 p-2 rounded text-xs font-mono pointer-events-none">
-                {status}
-            </div>
+            {/* AI Status Overlay - Subtle styling */}
+            {isCameraReady && (
+                <div className="absolute top-3 left-3 text-[#9bba98] text-xs font-courier opacity-70 pointer-events-none drop-shadow">
+                    {status}
+                </div>
+            )}
             {/* Load MediaPipe Scripts */}
             <Script
                 src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"
