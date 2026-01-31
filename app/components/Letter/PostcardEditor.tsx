@@ -1,54 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Download, Send, Share2 } from "lucide-react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { Download, Send, Loader2 } from "lucide-react";
 import { supabase } from "@/utils/supabase";
 
 export default function PostcardEditor() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [text, setText] = useState(""); // Stamp text
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-    const [qAnswers, setQAnswers] = useState({ qa1: "", qa2: "", qa3: "", qa4: "" });
+    const [isUploading, setIsUploading] = useState(false);
 
-    // Load drawing and answers
-    useEffect(() => {
-        // Mock loading from localStorage (bridge from HandCanvas)
-        // In real app, use Context or URL params
-        const drawingData = localStorage.getItem("drawing");
-        // const answers = JSON.parse(localStorage.getItem("qaAnswers") || "{}"); // Q&A feature (omitted for speed in migration, focus on drawing first)
-
-        // Initial Draw
-        drawCanvas(drawingData);
-    }, [text, date]);
-
-    const drawCanvas = (drawingData: string | null) => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-
-        // 1. Background
-        const bgImg = new Image();
-        bgImg.src = "/assets/03/BG-66.png"; // Make sure this path is correct in public
-        bgImg.onload = () => {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
-
-            // 2. Drawing Overlay
-            if (drawingData) {
-                const drawImg = new Image();
-                drawImg.src = drawingData;
-                drawImg.onload = () => {
-                    ctx.drawImage(drawImg, 0, 0, canvas.width, canvas.height);
-                    drawStamp(ctx); // Draw stamp on top
-                };
-            } else {
-                drawStamp(ctx);
-            }
-        };
-    };
-
-    const drawStamp = (ctx: CanvasRenderingContext2D) => {
+    const drawStamp = useCallback((ctx: CanvasRenderingContext2D, stampText: string, stampDate: string) => {
         // Stamp Logic (Replicated from original)
         const w = 240;
         const h = 120;
@@ -74,12 +36,45 @@ export default function PostcardEditor() {
         ctx.stroke();
 
         // Text
-        ctx.font = '16px "Courier Prime", monospace'; // Use imported font font-family name if possible, or fallback
+        ctx.font = '16px "Courier Prime", monospace';
         ctx.fillText('DRAWN LETTER', pad, midY / 2);
-        ctx.fillText(text || '-', pad, midY + pad);
-        ctx.fillText(date, pad, midY + pad + 24);
+        ctx.fillText(stampText || '-', pad, midY + pad);
+        ctx.fillText(stampDate, pad, midY + pad + 24);
         ctx.restore();
-    };
+    }, []);
+
+    const drawCanvas = useCallback((drawingData: string | null, stampText: string, stampDate: string) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+
+        // 1. Background
+        const bgImg = new Image();
+        bgImg.src = "/assets/03/BG-66.png";
+        bgImg.onload = () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+
+            // 2. Drawing Overlay
+            if (drawingData) {
+                const drawImg = new Image();
+                drawImg.src = drawingData;
+                drawImg.onload = () => {
+                    ctx.drawImage(drawImg, 0, 0, canvas.width, canvas.height);
+                    drawStamp(ctx, stampText, stampDate);
+                };
+            } else {
+                drawStamp(ctx, stampText, stampDate);
+            }
+        };
+    }, [drawStamp]);
+
+    // Load drawing and render
+    useEffect(() => {
+        const drawingData = localStorage.getItem("drawing");
+        drawCanvas(drawingData, text, date);
+    }, [text, date, drawCanvas]);
 
     const handleDownload = () => {
         if (!canvasRef.current) return;
@@ -95,26 +90,35 @@ export default function PostcardEditor() {
             alert("Cloud upload is not configured. Please set Supabase environment variables.");
             return;
         }
-        const client = supabase; // Capture for closure
-        // Convert to Blob
-        canvasRef.current.toBlob(async (blob) => {
-            if (!blob) return;
+        if (isUploading) return; // Prevent double-clicks
 
-            // Upload to Supabase Storage
-            // 1. Generate filename
+        setIsUploading(true);
+        const client = supabase;
+
+        try {
+            const blob = await new Promise<Blob | null>((resolve) => {
+                canvasRef.current!.toBlob(resolve);
+            });
+
+            if (!blob) {
+                throw new Error("Failed to create image blob");
+            }
+
             const filename = `postcard-${Date.now()}.png`;
-
-            // 2. Upload
             const { data, error } = await client.storage
-                .from('postcards') // Ensure bucket exists! I need to create it or assume it exists? I didn't create it.
+                .from('postcards')
                 .upload(filename, blob);
 
             if (error) {
                 alert("Upload failed: " + error.message);
             } else {
-                alert("Uploaded! " + data?.path);
+                alert("Uploaded successfully! " + data?.path);
             }
-        });
+        } catch (err) {
+            alert("Upload failed: " + (err instanceof Error ? err.message : "Unknown error"));
+        } finally {
+            setIsUploading(false);
+        }
     };
 
     return (
@@ -162,10 +166,20 @@ export default function PostcardEditor() {
                     </button>
                     <button
                         onClick={handleUpload}
-                        className="flex items-center justify-center gap-2 px-5 py-2.5 min-h-[44px] bg-[#d32f2f] text-white rounded-full hover:bg-[#b71c1c] active:scale-95 transition-all shadow-lg font-bold"
+                        disabled={isUploading}
+                        className="flex items-center justify-center gap-2 px-5 py-2.5 min-h-[44px] bg-[#d32f2f] text-white rounded-full hover:bg-[#b71c1c] active:scale-95 transition-all shadow-lg font-bold disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                        <Send className="w-4 h-4" />
-                        <span>Send</span>
+                        {isUploading ? (
+                            <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span>Sending...</span>
+                            </>
+                        ) : (
+                            <>
+                                <Send className="w-4 h-4" />
+                                <span>Send</span>
+                            </>
+                        )}
                     </button>
                 </div>
             </div>

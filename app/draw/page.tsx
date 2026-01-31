@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import HandCanvas, { HandCanvasRef } from "@/app/components/Drawing/HandCanvas";
 import QAQuestions from "@/app/components/Drawing/QAQuestions";
-import { ArrowLeft, ArrowRight, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Trash2, Undo2, Redo2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -12,7 +12,20 @@ export default function DrawPage() {
     const [brushSize, setBrushSize] = useState(6);
     const [brushColor, setBrushColor] = useState("#9bba98");
     const [activeQuestion, setActiveQuestion] = useState(0);
+    const [canUndo, setCanUndo] = useState(false);
+    const [canRedo, setCanRedo] = useState(false);
     const canvasRef = useRef<HandCanvasRef>(null);
+
+    // Update undo/redo state periodically
+    useEffect(() => {
+        const interval = setInterval(() => {
+            if (canvasRef.current) {
+                setCanUndo(canvasRef.current.canUndo());
+                setCanRedo(canvasRef.current.canRedo());
+            }
+        }, 200);
+        return () => clearInterval(interval);
+    }, []);
 
     const handleFinish = () => {
         if (canvasRef.current) {
@@ -21,15 +34,32 @@ export default function DrawPage() {
                 localStorage.setItem("drawing", dataUrl);
             }
         }
-        // Always navigate, even if canvas is empty
         router.push("/postcard");
     };
 
     const handleClear = () => {
         if (canvasRef.current) {
             canvasRef.current.clearCanvas();
+            setCanUndo(false);
+            setCanRedo(false);
         }
     };
+
+    const handleUndo = useCallback(() => {
+        if (canvasRef.current) {
+            canvasRef.current.undo();
+            setCanUndo(canvasRef.current.canUndo());
+            setCanRedo(canvasRef.current.canRedo());
+        }
+    }, []);
+
+    const handleRedo = useCallback(() => {
+        if (canvasRef.current) {
+            canvasRef.current.redo();
+            setCanUndo(canvasRef.current.canUndo());
+            setCanRedo(canvasRef.current.canRedo());
+        }
+    }, []);
 
     return (
         <div className="fixed inset-0 bg-[#f5f0e6] flex flex-col">
@@ -78,7 +108,7 @@ export default function DrawPage() {
 
             {/* Controls Toolbar */}
             <div className="p-4 bg-white/90 backdrop-blur-sm rounded-t-2xl shadow-[0_-2px_10px_rgba(0,0,0,0.1)] z-20">
-                <div className="flex items-center justify-between max-w-md mx-auto">
+                <div className="flex items-center justify-between max-w-lg mx-auto gap-2">
 
                     {/* Color Picker - Hybrid: Presets + Native Picker */}
                     <div className="flex items-center gap-1.5 sm:gap-2">
@@ -86,13 +116,13 @@ export default function DrawPage() {
                             <button
                                 key={color}
                                 onClick={() => setBrushColor(color)}
-                                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full border-2 transition-all active:scale-95 ${brushColor === color ? 'border-[#3c3c3c] scale-110 shadow-md' : 'border-gray-300'}`}
+                                className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full border-2 transition-all active:scale-95 ${brushColor === color ? 'border-[#3c3c3c] scale-110 shadow-md' : 'border-gray-300'}`}
                                 style={{ backgroundColor: color }}
                                 aria-label={`Color ${color}`}
                             />
                         ))}
                         {/* Custom Color Picker */}
-                        <div className="relative w-9 h-9 sm:w-10 sm:h-10">
+                        <div className="relative w-8 h-8 sm:w-9 sm:h-9">
                             <input
                                 type="color"
                                 value={brushColor}
@@ -101,7 +131,7 @@ export default function DrawPage() {
                                 aria-label="Custom color picker"
                             />
                             <div
-                                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full border-2 border-dashed border-[#3c3c3c] flex items-center justify-center"
+                                className="w-8 h-8 sm:w-9 sm:h-9 rounded-full border-2 border-dashed border-[#3c3c3c] flex items-center justify-center"
                                 style={{ background: 'linear-gradient(135deg, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff)' }}
                             >
                                 <span className="text-white text-xs font-bold drop-shadow">+</span>
@@ -109,11 +139,11 @@ export default function DrawPage() {
                         </div>
                     </div>
 
-                    {/* Size Picker - Matches original: THIN(3), MEDIUM(6), THICK(12), EXTRA(20) */}
-                    <div className="flex items-center gap-1 sm:gap-2 bg-gray-100 rounded-full p-1.5 sm:p-2 px-2 sm:px-3">
+                    {/* Size Picker */}
+                    <div className="flex items-center gap-1 bg-gray-100 rounded-full p-1.5 px-2">
                         <button
                             onClick={() => setBrushSize(3)}
-                            className={`p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-full transition-all active:scale-90 ${brushSize === 3 ? 'bg-white shadow-md' : ''}`}
+                            className={`p-2 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-full transition-all active:scale-90 ${brushSize === 3 ? 'bg-white shadow-md' : ''}`}
                             aria-label="Thin brush"
                             title="THIN"
                         >
@@ -121,7 +151,7 @@ export default function DrawPage() {
                         </button>
                         <button
                             onClick={() => setBrushSize(6)}
-                            className={`p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-full transition-all active:scale-90 ${brushSize === 6 ? 'bg-white shadow-md' : ''}`}
+                            className={`p-2 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-full transition-all active:scale-90 ${brushSize === 6 ? 'bg-white shadow-md' : ''}`}
                             aria-label="Medium brush"
                             title="MEDIUM"
                         >
@@ -129,7 +159,7 @@ export default function DrawPage() {
                         </button>
                         <button
                             onClick={() => setBrushSize(12)}
-                            className={`p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-full transition-all active:scale-90 ${brushSize === 12 ? 'bg-white shadow-md' : ''}`}
+                            className={`p-2 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-full transition-all active:scale-90 ${brushSize === 12 ? 'bg-white shadow-md' : ''}`}
                             aria-label="Thick brush"
                             title="THICK"
                         >
@@ -137,7 +167,7 @@ export default function DrawPage() {
                         </button>
                         <button
                             onClick={() => setBrushSize(20)}
-                            className={`p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-full transition-all active:scale-90 ${brushSize === 20 ? 'bg-white shadow-md' : ''}`}
+                            className={`p-2 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-full transition-all active:scale-90 ${brushSize === 20 ? 'bg-white shadow-md' : ''}`}
                             aria-label="Extra thick brush"
                             title="EXTRA THICK"
                         >
@@ -145,15 +175,40 @@ export default function DrawPage() {
                         </button>
                     </div>
 
-                    {/* Clear Button */}
-                    <button
-                        onClick={handleClear}
-                        className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center bg-gray-100 rounded-full hover:bg-red-100 active:scale-90 transition-all"
-                        aria-label="Clear canvas"
-                        title="Clear Canvas"
-                    >
-                        <Trash2 className="w-5 h-5 text-[#3c3c3c]" />
-                    </button>
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-1">
+                        {/* Undo */}
+                        <button
+                            onClick={handleUndo}
+                            disabled={!canUndo}
+                            className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center bg-gray-100 rounded-full hover:bg-gray-200 active:scale-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                            aria-label="Undo"
+                            title="Undo (Ctrl+Z)"
+                        >
+                            <Undo2 className="w-4 h-4 text-[#3c3c3c]" />
+                        </button>
+
+                        {/* Redo */}
+                        <button
+                            onClick={handleRedo}
+                            disabled={!canRedo}
+                            className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center bg-gray-100 rounded-full hover:bg-gray-200 active:scale-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                            aria-label="Redo"
+                            title="Redo (Ctrl+Y)"
+                        >
+                            <Redo2 className="w-4 h-4 text-[#3c3c3c]" />
+                        </button>
+
+                        {/* Clear */}
+                        <button
+                            onClick={handleClear}
+                            className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center bg-gray-100 rounded-full hover:bg-red-100 active:scale-90 transition-all"
+                            aria-label="Clear canvas"
+                            title="Clear Canvas"
+                        >
+                            <Trash2 className="w-4 h-4 text-[#3c3c3c]" />
+                        </button>
+                    </div>
 
                 </div>
             </div>

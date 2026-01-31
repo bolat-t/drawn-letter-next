@@ -1,7 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
+import { useEffect, useRef, useState, forwardRef, useImperativeHandle, useCallback } from "react";
 import Script from "next/script";
+import {
+    Point,
+    Stroke,
+    catmullRomSpline,
+    createCoordinateFilters,
+    calculateLineWidth,
+    StrokeHistory,
+    generateStrokeId,
+    getDevicePixelRatio,
+} from "@/utils/drawing";
 
 interface HandCanvasProps {
     brushColor: string;
@@ -11,6 +21,10 @@ interface HandCanvasProps {
 export interface HandCanvasRef {
     getDataURL: () => string | null;
     clearCanvas: () => void;
+    undo: () => boolean;
+    redo: () => boolean;
+    canUndo: () => boolean;
+    canRedo: () => boolean;
 }
 
 const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
@@ -19,13 +33,28 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
 }, ref) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const [isCameraReady, setIsCameraReady] = useState(false);
     const [status, setStatus] = useState("Initializing AI...");
     const [libLoaded, setLibLoaded] = useState({ hands: false, camera: false });
+    const [, forceUpdate] = useState({});
 
     // Store brush settings in refs to avoid recreating camera on every change
     const brushColorRef = useRef(brushColor);
     const brushSizeRef = useRef(brushSize);
+
+    // Drawing state refs
+    const prevPos = useRef<Point | null>(null);
+    const isErasing = useRef(false);
+    const currentStrokePoints = useRef<Point[]>([]);
+    const strokeHistoryRef = useRef<StrokeHistory>(new StrokeHistory(50));
+    const coordinateFiltersRef = useRef(createCoordinateFilters(0.01, 0.15));
+
+    // Camera and hands instances for cleanup
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cameraRef = useRef<any>(null);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handsRef = useRef<any>(null);
 
     // Keep refs updated
     useEffect(() => {
@@ -33,25 +62,93 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
         brushSizeRef.current = brushSize;
     }, [brushColor, brushSize]);
 
-    // Camera and hands instances for cleanup
-    const cameraRef = useRef<any>(null);
-    const handsRef = useRef<any>(null);
+    // Setup stroke history change listener
+    useEffect(() => {
+        strokeHistoryRef.current.onChange(() => {
+            forceUpdate({});
+        });
+    }, []);
+
+    // Redraw all strokes from history onto offscreen canvas
+    const redrawFromHistory = useCallback(() => {
+        const canvas = canvasRef.current;
+        const offscreen = offscreenCanvasRef.current;
+        if (!canvas || !offscreen) return;
+
+        const mainCtx = canvas.getContext("2d");
+        const offCtx = offscreen.getContext("2d");
+        if (!mainCtx || !offCtx) return;
+
+        const dpr = getDevicePixelRatio();
+
+        // Clear both canvases
+        offCtx.clearRect(0, 0, offscreen.width, offscreen.height);
+        mainCtx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Redraw all strokes from history
+        const strokes = strokeHistoryRef.current.getStrokes();
+        offCtx.save();
+        offCtx.scale(dpr, dpr);
+
+        for (const stroke of strokes) {
+            if (stroke.points.length < 2) continue;
+
+            // Apply smoothing to stored points
+            const smoothedPoints = stroke.points.length >= 4
+                ? catmullRomSpline(stroke.points, 0.5, 6)
+                : stroke.points;
+
+            offCtx.strokeStyle = stroke.color;
+            offCtx.lineCap = "round";
+            offCtx.lineJoin = "round";
+            offCtx.lineWidth = stroke.size;
+
+            offCtx.beginPath();
+            offCtx.moveTo(smoothedPoints[0].x, smoothedPoints[0].y);
+
+            for (let i = 1; i < smoothedPoints.length; i++) {
+                const curr = smoothedPoints[i];
+                const prev = smoothedPoints[i - 1];
+
+                // Variable width based on velocity
+                const width = calculateLineWidth(curr, prev, stroke.size);
+                offCtx.lineWidth = width;
+
+                offCtx.lineTo(curr.x, curr.y);
+            }
+            offCtx.stroke();
+        }
+
+        offCtx.restore();
+
+        // Copy offscreen to main
+        mainCtx.drawImage(offscreen, 0, 0);
+    }, []);
 
     useImperativeHandle(ref, () => ({
         getDataURL: () => {
             if (canvasRef.current) {
-                // Create a new canvas to flip the image horizontally
-                // (since we display mirrored but want to save un-mirrored for natural viewing)
                 const canvas = canvasRef.current;
+                const dpr = getDevicePixelRatio();
+
+                // Create a temp canvas at CSS size (not scaled)
                 const tempCanvas = document.createElement('canvas');
-                tempCanvas.width = canvas.width;
-                tempCanvas.height = canvas.height;
+                tempCanvas.width = canvas.width / dpr;
+                tempCanvas.height = canvas.height / dpr;
                 const tempCtx = tempCanvas.getContext('2d');
+
                 if (tempCtx) {
-                    // Flip horizontally
+                    // Flip horizontally for natural viewing
                     tempCtx.translate(tempCanvas.width, 0);
                     tempCtx.scale(-1, 1);
-                    tempCtx.drawImage(canvas, 0, 0);
+                    // Draw from offscreen at correct scale
+                    if (offscreenCanvasRef.current) {
+                        tempCtx.drawImage(
+                            offscreenCanvasRef.current,
+                            0, 0, offscreenCanvasRef.current.width, offscreenCanvasRef.current.height,
+                            0, 0, tempCanvas.width, tempCanvas.height
+                        );
+                    }
                     return tempCanvas.toDataURL("image/png");
                 }
                 return canvas.toDataURL("image/png");
@@ -59,20 +156,44 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
             return null;
         },
         clearCanvas: () => {
+            strokeHistoryRef.current.clear();
+            coordinateFiltersRef.current.reset();
             if (canvasRef.current) {
                 const ctx = canvasRef.current.getContext("2d");
                 if (ctx) {
                     ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
                 }
             }
-        }
-    }));
-
-    // Drawing state refs
-    const prevPos = useRef<{ x: number; y: number } | null>(null);
-    const isErasing = useRef(false);
+            if (offscreenCanvasRef.current) {
+                const ctx = offscreenCanvasRef.current.getContext("2d");
+                if (ctx) {
+                    ctx.clearRect(0, 0, offscreenCanvasRef.current.width, offscreenCanvasRef.current.height);
+                }
+            }
+        },
+        undo: () => {
+            const undone = strokeHistoryRef.current.undo();
+            if (undone) {
+                redrawFromHistory();
+                return true;
+            }
+            return false;
+        },
+        redo: () => {
+            const redone = strokeHistoryRef.current.redo();
+            if (redone) {
+                redrawFromHistory();
+                return true;
+            }
+            return false;
+        },
+        canUndo: () => strokeHistoryRef.current.canUndo(),
+        canRedo: () => strokeHistoryRef.current.canRedo(),
+    }), [redrawFromHistory]);
 
     // Check if libraries are already loaded (for navigation back)
+    // This intentionally sets state to detect if MediaPipe was already loaded from a previous mount
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const win = window as any;
@@ -81,6 +202,32 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
         }
         if (win.Camera && !libLoaded.camera) {
             setLibLoaded(prev => ({ ...prev, camera: true }));
+        }
+    }, [libLoaded.camera, libLoaded.hands]);
+
+    // Setup high-DPI canvas
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const dpr = getDevicePixelRatio();
+        const cssWidth = 1024;
+        const cssHeight = 768;
+
+        // Set actual size (scaled for DPI)
+        canvas.width = cssWidth * dpr;
+        canvas.height = cssHeight * dpr;
+
+        // Create offscreen canvas at same size
+        const offscreen = document.createElement('canvas');
+        offscreen.width = cssWidth * dpr;
+        offscreen.height = cssHeight * dpr;
+        offscreenCanvasRef.current = offscreen;
+
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
         }
     }, []);
 
@@ -91,8 +238,14 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
         const videoElement = videoRef.current;
         const canvasElement = canvasRef.current;
         const canvasCtx = canvasElement.getContext("2d");
+        const offscreen = offscreenCanvasRef.current;
+        const offCtx = offscreen?.getContext("2d");
 
-        if (!canvasCtx) return;
+        if (!canvasCtx || !offscreen || !offCtx) return;
+
+        const dpr = getDevicePixelRatio();
+        const cssWidth = 1024;
+        const cssHeight = 768;
 
         // Access globals from CDN
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -119,14 +272,18 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
             minTrackingConfidence: 0.7,
         });
 
-        // REMOVED: Open hand (all fingers up) no longer clears canvas
-        // This was causing accidental deletion when users naturally transition from drawing
+        // Landmark type for hand detection points
+        interface Landmark {
+            x: number;
+            y: number;
+            z: number;
+        }
 
-        const isFist = (lm: any[]) => {
+        const isFist = (lm: Landmark[]) => {
             return [8, 12, 16, 20].every((tip) => lm[tip].y > lm[tip - 2].y);
         };
 
-        const isEraserGesture = (lm: any[]) => {
+        const isEraserGesture = (lm: Landmark[]) => {
             // Peace sign: index and middle up, others down
             return (
                 lm[8].y < lm[6].y && // Index up
@@ -136,7 +293,7 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
             );
         };
 
-        const isDrawingGesture = (lm: any[]) => {
+        const isDrawingGesture = (lm: Landmark[]) => {
             // Only index finger up
             return (
                 lm[8].y < lm[6].y && // Index up
@@ -146,20 +303,44 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
             );
         };
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         hands.onResults((results: any) => {
             if (
                 !results.multiHandLandmarks ||
                 results.multiHandLandmarks.length === 0
             ) {
+                // No hand detected - finalize current stroke
+                if (currentStrokePoints.current.length > 1) {
+                    const stroke: Stroke = {
+                        id: generateStrokeId(),
+                        points: [...currentStrokePoints.current],
+                        color: brushColorRef.current,
+                        size: brushSizeRef.current,
+                    };
+                    strokeHistoryRef.current.addStroke(stroke);
+                }
+                currentStrokePoints.current = [];
                 prevPos.current = null;
+                coordinateFiltersRef.current.reset();
                 return;
             }
 
-            const lm = results.multiHandLandmarks[0];
+            const lm: Landmark[] = results.multiHandLandmarks[0];
 
-            // Fist = pause/stop drawing
+            // Fist = pause/stop drawing - finalize stroke
             if (isFist(lm)) {
+                if (currentStrokePoints.current.length > 1) {
+                    const stroke: Stroke = {
+                        id: generateStrokeId(),
+                        points: [...currentStrokePoints.current],
+                        color: brushColorRef.current,
+                        size: brushSizeRef.current,
+                    };
+                    strokeHistoryRef.current.addStroke(stroke);
+                }
+                currentStrokePoints.current = [];
                 prevPos.current = null;
+                coordinateFiltersRef.current.reset();
                 return;
             }
 
@@ -168,36 +349,109 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
             const isDrawing = isDrawingGesture(lm);
 
             if (!isErasing.current && !isDrawing) {
+                // Finalize stroke when gesture stops
+                if (currentStrokePoints.current.length > 1) {
+                    const stroke: Stroke = {
+                        id: generateStrokeId(),
+                        points: [...currentStrokePoints.current],
+                        color: brushColorRef.current,
+                        size: brushSizeRef.current,
+                    };
+                    strokeHistoryRef.current.addStroke(stroke);
+                }
+                currentStrokePoints.current = [];
                 prevPos.current = null;
+                coordinateFiltersRef.current.reset();
                 return;
             }
 
-            // Draw - use refs for current brush settings
-            const x = lm[8].x * canvasElement.width;
-            const y = lm[8].y * canvasElement.height;
+            // Get raw coordinates
+            const rawX = lm[8].x * cssWidth;
+            const rawY = lm[8].y * cssHeight;
+
+            // Apply Kalman filter for jitter reduction
+            const filtered = coordinateFiltersRef.current.filter({
+                x: rawX,
+                y: rawY,
+                timestamp: Date.now()
+            });
+
+            const x = filtered.x;
+            const y = filtered.y;
+
+            // Scale for high-DPI
+            const scaledX = x * dpr;
+            const scaledY = y * dpr;
 
             if (prevPos.current) {
-                canvasCtx.beginPath();
-                canvasCtx.lineCap = "round";
-
                 if (isErasing.current) {
-                    canvasCtx.save();
-                    canvasCtx.globalCompositeOperation = "destination-out";
-                    canvasCtx.moveTo(prevPos.current.x, prevPos.current.y);
-                    canvasCtx.lineTo(x, y);
-                    canvasCtx.lineWidth = brushSizeRef.current * 2.5;
-                    canvasCtx.stroke();
-                    canvasCtx.restore();
+                    // Erase mode - draw on offscreen canvas
+                    offCtx.save();
+                    offCtx.globalCompositeOperation = "destination-out";
+                    offCtx.beginPath();
+                    offCtx.lineCap = "round";
+                    offCtx.moveTo(prevPos.current.x * dpr, prevPos.current.y * dpr);
+                    offCtx.lineTo(scaledX, scaledY);
+                    offCtx.lineWidth = brushSizeRef.current * 2.5 * dpr;
+                    offCtx.stroke();
+                    offCtx.restore();
+
+                    // Copy to main canvas
+                    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+                    canvasCtx.drawImage(offscreen, 0, 0);
                 } else {
-                    canvasCtx.save();
-                    canvasCtx.globalCompositeOperation = "source-over";
-                    canvasCtx.moveTo(prevPos.current.x, prevPos.current.y);
-                    canvasCtx.lineTo(x, y);
-                    canvasCtx.strokeStyle = brushColorRef.current;
-                    canvasCtx.lineWidth = brushSizeRef.current;
-                    canvasCtx.stroke();
-                    canvasCtx.restore();
+                    // Drawing mode
+                    const point: Point = { x, y, timestamp: Date.now() };
+                    currentStrokePoints.current.push(point);
+
+                    // Calculate variable width
+                    const lineWidth = calculateLineWidth(
+                        point,
+                        prevPos.current,
+                        brushSizeRef.current
+                    );
+
+                    // Draw current segment with smoothing preview
+                    offCtx.save();
+                    offCtx.globalCompositeOperation = "source-over";
+                    offCtx.strokeStyle = brushColorRef.current;
+                    offCtx.lineCap = "round";
+                    offCtx.lineJoin = "round";
+                    offCtx.lineWidth = lineWidth * dpr;
+
+                    // Use quadratic curve for smoother real-time drawing
+                    if (currentStrokePoints.current.length >= 3) {
+                        const points = currentStrokePoints.current;
+                        const len = points.length;
+                        const p1 = points[len - 3];
+                        const p2 = points[len - 2];
+                        const p3 = points[len - 1];
+
+                        // Midpoints for smooth curve
+                        const midX = (p2.x + p3.x) / 2;
+                        const midY = (p2.y + p3.y) / 2;
+
+                        offCtx.beginPath();
+                        offCtx.moveTo(p1.x * dpr, p1.y * dpr);
+                        offCtx.quadraticCurveTo(p2.x * dpr, p2.y * dpr, midX * dpr, midY * dpr);
+                        offCtx.stroke();
+                    } else {
+                        // Simple line for first few points
+                        offCtx.beginPath();
+                        offCtx.moveTo(prevPos.current.x * dpr, prevPos.current.y * dpr);
+                        offCtx.lineTo(scaledX, scaledY);
+                        offCtx.stroke();
+                    }
+
+                    offCtx.restore();
+
+                    // Copy to main canvas
+                    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+                    canvasCtx.drawImage(offscreen, 0, 0);
                 }
+            } else {
+                // Starting new stroke
+                currentStrokePoints.current = [{ x, y, timestamp: Date.now() }];
             }
 
             prevPos.current = { x, y };
@@ -218,7 +472,7 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
                 setIsCameraReady(true);
                 setStatus("Ready! Index finger to draw.");
             })
-            .catch((err: any) => {
+            .catch((err: Error) => {
                 console.error("Camera error:", err);
                 setStatus("Camera Error: " + (err.message || err));
             });
@@ -262,6 +516,7 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
                 width={1024}
                 height={768}
                 className="absolute top-0 left-0 w-full h-full -scale-x-100 touch-none"
+                style={{ imageRendering: 'auto' }}
             />
 
             {isCameraReady && (

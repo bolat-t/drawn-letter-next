@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { X } from "lucide-react";
 
 interface WelcomeModalProps {
@@ -10,20 +10,29 @@ interface WelcomeModalProps {
 
 export default function WelcomeModal({ onClose, onStart }: WelcomeModalProps) {
     const [isVisible, setIsVisible] = useState(false);
+    const closeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const startTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     useEffect(() => {
         // Animate in
-        setTimeout(() => setIsVisible(true), 50);
+        const animateTimeout = setTimeout(() => setIsVisible(true), 50);
+
+        // Cleanup on unmount
+        return () => {
+            clearTimeout(animateTimeout);
+            if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+            if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
+        };
     }, []);
 
     const handleClose = () => {
         setIsVisible(false);
-        setTimeout(onClose, 300);
+        closeTimeoutRef.current = setTimeout(onClose, 300);
     };
 
     const handleStart = () => {
         setIsVisible(false);
-        setTimeout(onStart, 300);
+        startTimeoutRef.current = setTimeout(onStart, 300);
     };
 
     return (
