@@ -3,7 +3,7 @@
 import { useState, useRef } from "react";
 import HandCanvas, { HandCanvasRef } from "@/app/components/Drawing/HandCanvas";
 import QAQuestions from "@/app/components/Drawing/QAQuestions";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -23,6 +23,12 @@ export default function DrawPage() {
         }
         // Always navigate, even if canvas is empty
         router.push("/postcard");
+    };
+
+    const handleClear = () => {
+        if (canvasRef.current) {
+            canvasRef.current.clearCanvas();
+        }
     };
 
     return (
@@ -138,6 +144,16 @@ export default function DrawPage() {
                             <div className="w-5 h-5 bg-[#3c3c3c] rounded-full" />
                         </button>
                     </div>
+
+                    {/* Clear Button */}
+                    <button
+                        onClick={handleClear}
+                        className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center bg-gray-100 rounded-full hover:bg-red-100 active:scale-90 transition-all"
+                        aria-label="Clear canvas"
+                        title="Clear Canvas"
+                    >
+                        <Trash2 className="w-5 h-5 text-[#3c3c3c]" />
+                    </button>
 
                 </div>
             </div>

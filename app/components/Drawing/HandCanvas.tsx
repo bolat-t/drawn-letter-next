@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, forwardRef, useImperativeHandle, useCallback } from "react";
+import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import Script from "next/script";
 
 interface HandCanvasProps {
@@ -10,6 +10,7 @@ interface HandCanvasProps {
 
 export interface HandCanvasRef {
     getDataURL: () => string | null;
+    clearCanvas: () => void;
 }
 
 const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
@@ -39,13 +40,31 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
     useImperativeHandle(ref, () => ({
         getDataURL: () => {
             if (canvasRef.current) {
-                // Check if canvas has any content
-                const ctx = canvasRef.current.getContext("2d");
-                if (ctx) {
-                    return canvasRef.current.toDataURL("image/png");
+                // Create a new canvas to flip the image horizontally
+                // (since we display mirrored but want to save un-mirrored for natural viewing)
+                const canvas = canvasRef.current;
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = canvas.width;
+                tempCanvas.height = canvas.height;
+                const tempCtx = tempCanvas.getContext('2d');
+                if (tempCtx) {
+                    // Flip horizontally
+                    tempCtx.translate(tempCanvas.width, 0);
+                    tempCtx.scale(-1, 1);
+                    tempCtx.drawImage(canvas, 0, 0);
+                    return tempCanvas.toDataURL("image/png");
                 }
+                return canvas.toDataURL("image/png");
             }
             return null;
+        },
+        clearCanvas: () => {
+            if (canvasRef.current) {
+                const ctx = canvasRef.current.getContext("2d");
+                if (ctx) {
+                    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+                }
+            }
         }
     }));
 
@@ -100,26 +119,30 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
             minTrackingConfidence: 0.7,
         });
 
-        const isOpenHand = (lm: any[]) => {
-            return [8, 12, 16, 20].every((tip) => lm[tip].y < lm[tip - 2].y);
-        };
+        // REMOVED: Open hand (all fingers up) no longer clears canvas
+        // This was causing accidental deletion when users naturally transition from drawing
 
         const isFist = (lm: any[]) => {
             return [8, 12, 16, 20].every((tip) => lm[tip].y > lm[tip - 2].y);
         };
 
         const isEraserGesture = (lm: any[]) => {
+            // Peace sign: index and middle up, others down
             return (
                 lm[8].y < lm[6].y && // Index up
                 lm[12].y < lm[10].y && // Middle up
-                lm[16].y > lm[14].y // Ring down
+                lm[16].y > lm[14].y && // Ring down
+                lm[20].y > lm[18].y // Pinky down
             );
         };
 
         const isDrawingGesture = (lm: any[]) => {
+            // Only index finger up
             return (
                 lm[8].y < lm[6].y && // Index up
-                lm[12].y > lm[10].y // Middle down
+                lm[12].y > lm[10].y && // Middle down
+                lm[16].y > lm[14].y && // Ring down
+                lm[20].y > lm[18].y // Pinky down
             );
         };
 
@@ -134,20 +157,13 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
 
             const lm = results.multiHandLandmarks[0];
 
-            // 1. Clear Canvas (Open Hand)
-            if (isOpenHand(lm)) {
-                canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-                prevPos.current = null;
-                return;
-            }
-
-            // 2. Stop Drawing (Fist)
+            // Fist = pause/stop drawing
             if (isFist(lm)) {
                 prevPos.current = null;
                 return;
             }
 
-            // 3. Determine Mode
+            // Determine Mode
             isErasing.current = isEraserGesture(lm);
             const isDrawing = isDrawingGesture(lm);
 
@@ -156,7 +172,7 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
                 return;
             }
 
-            // 4. Draw - use refs for current brush settings
+            // Draw - use refs for current brush settings
             const x = lm[8].x * canvasElement.width;
             const y = lm[8].y * canvasElement.height;
 
@@ -224,7 +240,7 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
                 }
             }
         };
-    }, [libLoaded.hands, libLoaded.camera]); // Only reinitialize when libs load, NOT on brush changes
+    }, [libLoaded.hands, libLoaded.camera]);
 
     return (
         <div className="relative w-full h-full rounded-2xl overflow-hidden shadow-[0_4px_10px_rgba(0,0,0,0.2)] bg-white">

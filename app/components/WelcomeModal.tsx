@@ -47,49 +47,58 @@ export default function WelcomeModal({ onClose, onStart }: WelcomeModalProps) {
                 </button>
 
                 {/* Modal Content */}
-                <div className="p-8 pt-12 text-center space-y-6">
+                <div className="p-6 sm:p-8 pt-10 sm:pt-12 text-center space-y-5">
                     {/* Title */}
                     <div className="space-y-2">
-                        <h2 className="font-courier text-2xl font-bold text-[#3c3c3c] tracking-wide">
+                        <h2 className="font-courier text-xl sm:text-2xl font-bold text-[#3c3c3c] tracking-wide">
                             DRAWN LETTER
                         </h2>
                         <div className="w-16 h-0.5 bg-[#d32f2f] mx-auto" />
                     </div>
 
                     {/* Description */}
-                    <div className="space-y-4 text-[#5a5a5a] font-courier text-sm leading-relaxed">
+                    <div className="space-y-3 text-[#5a5a5a] font-courier text-sm leading-relaxed">
                         <p>
                             A slow digital letter, drawn by hand.
                         </p>
                         <p>
                             Use your hand gestures to draw and express your emotions.
-                            Answer reflective questions as you create.
                         </p>
                     </div>
 
-                    {/* Instructions */}
-                    <div className="bg-white/50 rounded-xl p-4 text-left space-y-2">
+                    {/* Instructions - Updated gestures */}
+                    <div className="bg-white/60 rounded-xl p-4 text-left space-y-2">
                         <p className="font-courier text-xs text-[#3c3c3c] font-bold uppercase tracking-wider">
                             Hand Gestures
                         </p>
-                        <ul className="font-courier text-xs text-[#5a5a5a] space-y-1">
-                            <li>☝️ <strong>Index finger up</strong> → Draw</li>
-                            <li>✌️ <strong>Peace sign</strong> → Erase</li>
-                            <li>✊ <strong>Fist</strong> → Stop drawing</li>
-                            <li>🖐️ <strong>Open hand</strong> → Clear canvas</li>
+                        <ul className="font-courier text-xs text-[#5a5a5a] space-y-1.5">
+                            <li className="flex items-center gap-2">
+                                <span className="text-base">☝️</span>
+                                <span><strong>Index finger</strong> → Draw</span>
+                            </li>
+                            <li className="flex items-center gap-2">
+                                <span className="text-base">✌️</span>
+                                <span><strong>Peace sign</strong> → Erase</span>
+                            </li>
+                            <li className="flex items-center gap-2">
+                                <span className="text-base">✊</span>
+                                <span><strong>Fist</strong> → Pause</span>
+                            </li>
                         </ul>
                     </div>
 
-                    {/* Start Button */}
-                    <button
-                        onClick={handleStart}
-                        className="w-full py-3 px-6 bg-[#d32f2f] text-white font-courier font-bold rounded-full shadow-lg hover:bg-[#b71c1c] hover:shadow-xl transition-all duration-200 transform hover:scale-105"
-                    >
-                        START DRAWING
-                    </button>
+                    {/* Start Button - Centered with proper width */}
+                    <div className="pt-2">
+                        <button
+                            onClick={handleStart}
+                            className="w-full max-w-[280px] mx-auto block py-3.5 px-6 bg-[#d32f2f] text-white font-courier font-bold text-base rounded-full shadow-lg hover:bg-[#b71c1c] hover:shadow-xl active:scale-95 transition-all duration-200"
+                        >
+                            START DRAWING
+                        </button>
+                    </div>
 
                     {/* Skip text */}
-                    <p className="font-courier text-xs text-[#9a9a9a]">
+                    <p className="font-courier text-xs text-[#9a9a9a] pt-1">
                         Tap outside to skip
                     </p>
                 </div>
