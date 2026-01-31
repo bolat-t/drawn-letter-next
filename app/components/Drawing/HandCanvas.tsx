@@ -279,27 +279,44 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
             z: number;
         }
 
+        // Gesture Detection Logic
+        const isFingerUp = (lm: Landmark[], tip: number, pip: number) => {
+            return lm[tip].y < lm[pip].y; // Upright usage assumption
+        };
+
+        const isFingerDown = (lm: Landmark[], tip: number, pip: number) => {
+            return lm[tip].y > lm[pip].y;
+        };
+
+        const isIndexUp = (lm: Landmark[]) => isFingerUp(lm, 8, 6);
+        const isMiddleUp = (lm: Landmark[]) => isFingerUp(lm, 12, 10);
+        const isRingUp = (lm: Landmark[]) => isFingerUp(lm, 16, 14);
+        const isPinkyUp = (lm: Landmark[]) => isFingerUp(lm, 20, 18);
+
         const isFist = (lm: Landmark[]) => {
-            return [8, 12, 16, 20].every((tip) => lm[tip].y > lm[tip - 2].y);
+            return (
+                isFingerDown(lm, 8, 6) &&
+                isFingerDown(lm, 12, 10) &&
+                isFingerDown(lm, 16, 14) &&
+                isFingerDown(lm, 20, 18)
+            );
         };
 
         const isEraserGesture = (lm: Landmark[]) => {
-            // Peace sign: index and middle up, others down
             return (
-                lm[8].y < lm[6].y && // Index up
-                lm[12].y < lm[10].y && // Middle up
-                lm[16].y > lm[14].y && // Ring down
-                lm[20].y > lm[18].y // Pinky down
+                isIndexUp(lm) &&
+                isMiddleUp(lm) &&
+                !isRingUp(lm) &&
+                !isPinkyUp(lm)
             );
         };
 
         const isDrawingGesture = (lm: Landmark[]) => {
-            // Only index finger up
             return (
-                lm[8].y < lm[6].y && // Index up
-                lm[12].y > lm[10].y && // Middle down
-                lm[16].y > lm[14].y && // Ring down
-                lm[20].y > lm[18].y // Pinky down
+                isIndexUp(lm) &&
+                !isMiddleUp(lm) &&
+                !isRingUp(lm) &&
+                !isPinkyUp(lm)
             );
         };
 
@@ -309,59 +326,35 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
                 !results.multiHandLandmarks ||
                 results.multiHandLandmarks.length === 0
             ) {
-                // No hand detected - finalize current stroke
-                if (currentStrokePoints.current.length > 1) {
-                    const stroke: Stroke = {
-                        id: generateStrokeId(),
-                        points: [...currentStrokePoints.current],
-                        color: brushColorRef.current,
-                        size: brushSizeRef.current,
-                    };
-                    strokeHistoryRef.current.addStroke(stroke);
-                }
-                currentStrokePoints.current = [];
-                prevPos.current = null;
-                coordinateFiltersRef.current.reset();
+                // No hand detected
+                finalizeStroke();
+                setStatus("No hand detected");
                 return;
             }
 
             const lm: Landmark[] = results.multiHandLandmarks[0];
 
-            // Fist = pause/stop drawing - finalize stroke
+            // 1. Check for Pause (Fist)
             if (isFist(lm)) {
-                if (currentStrokePoints.current.length > 1) {
-                    const stroke: Stroke = {
-                        id: generateStrokeId(),
-                        points: [...currentStrokePoints.current],
-                        color: brushColorRef.current,
-                        size: brushSizeRef.current,
-                    };
-                    strokeHistoryRef.current.addStroke(stroke);
-                }
-                currentStrokePoints.current = [];
-                prevPos.current = null;
-                coordinateFiltersRef.current.reset();
+                finalizeStroke();
+                setStatus("⏸ Paused");
                 return;
             }
 
-            // Determine Mode
-            isErasing.current = isEraserGesture(lm);
-            const isDrawing = isDrawingGesture(lm);
-
-            if (!isErasing.current && !isDrawing) {
-                // Finalize stroke when gesture stops
-                if (currentStrokePoints.current.length > 1) {
-                    const stroke: Stroke = {
-                        id: generateStrokeId(),
-                        points: [...currentStrokePoints.current],
-                        color: brushColorRef.current,
-                        size: brushSizeRef.current,
-                    };
-                    strokeHistoryRef.current.addStroke(stroke);
-                }
-                currentStrokePoints.current = [];
-                prevPos.current = null;
-                coordinateFiltersRef.current.reset();
+            // 2. Check for Erase (Peace Sign)
+            if (isEraserGesture(lm)) {
+                isErasing.current = true;
+                setStatus("✌️ Eraser Mode");
+            }
+            // 3. Check for Draw (Index Finger)
+            else if (isDrawingGesture(lm)) {
+                isErasing.current = false;
+                setStatus("👆 Drawing Mode");
+            }
+            else {
+                // Unknown/Transition gesture
+                finalizeStroke();
+                setStatus("✋ Hand Detected");
                 return;
             }
 
@@ -456,6 +449,22 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
 
             prevPos.current = { x, y };
         });
+
+        // Helper to finalize stroke
+        const finalizeStroke = () => {
+            if (currentStrokePoints.current.length > 1) {
+                const stroke: Stroke = {
+                    id: generateStrokeId(),
+                    points: [...currentStrokePoints.current],
+                    color: brushColorRef.current,
+                    size: brushSizeRef.current,
+                };
+                strokeHistoryRef.current.addStroke(stroke);
+            }
+            currentStrokePoints.current = [];
+            prevPos.current = null;
+            coordinateFiltersRef.current.reset();
+        };
 
         const camera = new Camera(videoElement, {
             onFrame: async () => {
