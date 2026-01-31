@@ -19,9 +19,10 @@ export default function DrawPage() {
             const dataUrl = canvasRef.current.getDataURL();
             if (dataUrl) {
                 localStorage.setItem("drawing", dataUrl);
-                router.push("/postcard");
             }
         }
+        // Always navigate, even if canvas is empty
+        router.push("/postcard");
     };
 
     return (
