@@ -62,13 +62,6 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
         brushSizeRef.current = brushSize;
     }, [brushColor, brushSize]);
 
-    // Setup stroke history change listener
-    useEffect(() => {
-        strokeHistoryRef.current.onChange(() => {
-            forceUpdate({});
-        });
-    }, []);
-
     // Redraw all strokes from history onto offscreen canvas
     const redrawFromHistory = useCallback(() => {
         const canvas = canvasRef.current;
@@ -124,6 +117,15 @@ const HandCanvas = forwardRef<HandCanvasRef, HandCanvasProps>(({
         // Copy offscreen to main
         mainCtx.drawImage(offscreen, 0, 0);
     }, []);
+
+    // Setup stroke history change listener
+    useEffect(() => {
+        strokeHistoryRef.current.onChange(() => {
+            redrawFromHistory();
+        });
+    }, [redrawFromHistory]);
+
+
 
     useImperativeHandle(ref, () => ({
         getDataURL: () => {
