@@ -51,11 +51,9 @@ export default function PostcardEditor() {
 
         // 1. Background
         const bgImg = new Image();
-        bgImg.src = "/assets/03/BG-66.png";
-        bgImg.onload = () => {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+        bgImg.src = "/assets/03/bg-03.png";
 
+        const renderContent = () => {
             // 2. Drawing Overlay
             if (drawingData) {
                 const drawImg = new Image();
@@ -64,9 +62,27 @@ export default function PostcardEditor() {
                     ctx.drawImage(drawImg, 0, 0, canvas.width, canvas.height);
                     drawStamp(ctx, stampText, stampDate);
                 };
+                drawImg.onerror = () => {
+                    console.error("Failed to load drawing data");
+                    drawStamp(ctx, stampText, stampDate);
+                };
             } else {
                 drawStamp(ctx, stampText, stampDate);
             }
+        };
+
+        bgImg.onload = () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+            renderContent();
+        };
+
+        bgImg.onerror = () => {
+            console.error("Failed to load background image:", bgImg.src);
+            // Fallback background
+            ctx.fillStyle = "#f5f0e6";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            renderContent();
         };
     }, [drawStamp]);
 
